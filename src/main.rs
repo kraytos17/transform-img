@@ -1,16 +1,14 @@
+use image::{DynamicImage, GenericImageView, Rgb, RgbImage};
 use std::env;
 use std::fs::File;
-use std::io::{self, BufRead, BufReader, Read};
-
-use image::{Rgb, RgbImage};
+use std::io::{self, BufRead, BufReader, BufWriter, Write};
 
 #[derive(Debug)]
-#[allow(dead_code)]
 struct PpmHeader {
     magic_number: String,
     width: u32,
     height: u32,
-    max_color_value: u32,
+    _max_color_val: u32,
 }
 
 const ASCII_PPM: &str = "P3";
@@ -60,17 +58,16 @@ fn read_ppm_header<R: BufRead>(reader: &mut R) -> io::Result<PpmHeader> {
         width: width.ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Missing width"))?,
         height: height
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Missing height"))?,
-        max_color_value: max_color_value
+        _max_color_val: max_color_value
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Missing max color value"))?,
     })
 }
 
-fn parse_ppm<R: Read + BufRead>(header: &PpmHeader, reader: &mut R) -> io::Result<Vec<u8>> {
+fn parse_ppm<R: BufRead>(header: &PpmHeader, reader: &mut R) -> io::Result<Vec<u8>> {
     let mut result = vec![];
 
     if header.magic_number == ASCII_PPM {
-        let lines = reader.lines();
-        for line in lines {
+        for line in reader.lines() {
             let line = line?;
             let trimmed_line = line.trim();
             if trimmed_line.starts_with('#') {
@@ -102,8 +99,8 @@ fn ppm_to_png(ppm_file: &str, png_file: &str) -> io::Result<()> {
     let mut reader = BufReader::new(file);
     let header = read_ppm_header(&mut reader)?;
     let data = parse_ppm(&header, &mut reader)?;
-    let mut rgb_img = RgbImage::new(header.width, header.height);
 
+    let mut rgb_img = RgbImage::new(header.width, header.height);
     for (i, chunk) in data.chunks(3).enumerate() {
         let x = (i as u32 % header.width) as u32;
         let y = (i as u32 / header.width) as u32;
@@ -111,17 +108,84 @@ fn ppm_to_png(ppm_file: &str, png_file: &str) -> io::Result<()> {
     }
 
     rgb_img.save(png_file).unwrap();
+    
     Ok(())
 }
 
-fn _write_ppm_header() {}
+fn write_ppm_header<W: Write>(
+    writer: &mut W,
+    img: &DynamicImage,
+    max_color_val: u32,
+    bin: bool,
+) -> io::Result<()> {
+    let (w, h) = img.dimensions();
+    writeln!(writer, "{}", if bin { BIN_PPM } else { ASCII_PPM })?;
+    writeln!(writer, "{} {}", w, h)?;
+    writeln!(writer, "{}", max_color_val)?;
+
+    Ok(())
+}
+
+fn write_ppm_data<W: Write>(writer: &mut W, img: &DynamicImage, bin: bool) -> io::Result<()> {
+    let pixels = img.to_rgb8();
+    if bin {
+        for px in pixels.pixels() {
+            writer.write_all(&[px[0], px[1], px[2]])?;
+        }
+    } else {
+        for px in pixels.pixels() {
+            writeln!(writer, "{} {} {}", px[0], px[1], px[2])?;
+        }
+    }
+
+    Ok(())
+}
+
+fn png_to_ppm(png_file: &str, ppm_file: &str, bin: bool) -> Result<(), image::ImageError> {
+    let input = image::open(png_file)?;
+    let max_color_val: u32 = 255;
+    let output = File::create(ppm_file)?;
+    let mut writer = BufWriter::new(output);
+
+    write_ppm_header(&mut writer, &input, max_color_val, bin)?;
+    write_ppm_data(&mut writer, &input, bin)?;
+
+    Ok(())
+}
 
 fn main() -> io::Result<()> {
     let args = env::args().collect::<Vec<_>>();
-    if args.len() != 3 {
-        eprintln!("Usage: {} <input.ppm> <output.png>", args[0]);
+    if args.len() != 4 {
+        eprintln!("Usage: {} <input> <output> <format>", args[0]);
         std::process::exit(1);
     }
-    ppm_to_png(&args[1], &args[2])?;
+
+    let input = &args[1];
+    let output = &args[2];
+    let format = &args[3];
+
+    match (
+        input.ends_with(".ppm"),
+        output.ends_with(".png"),
+        format.as_str(),
+    ) {
+        (true, true, _) => ppm_to_png(input, output)?,
+        (true, false, _) | (false, true, _) => {
+            eprintln!("Unsupported conversion direction.");
+            std::process::exit(1);
+        }
+        (false, false, fmt) => {
+            let bin = match fmt {
+                ASCII_PPM => false,
+                BIN_PPM => true,
+                _ => {
+                    eprintln!("Invalid format. Use P3 for ASCII or P6 for binary.");
+                    std::process::exit(1);
+                }
+            };
+            png_to_ppm(input, output, bin).unwrap();
+        }
+    }
+
     Ok(())
 }

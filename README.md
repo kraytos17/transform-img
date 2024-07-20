@@ -1,3 +1,3 @@
 # transform-img
 
-Image format converter in Rust (currently .ppm <-> .png only supported)
+Image format converter in Rust (currently .ppm to .png only supported)
