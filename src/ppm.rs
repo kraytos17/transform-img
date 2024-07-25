@@ -1,6 +1,5 @@
 use image::{DynamicImage, GenericImageView};
 use std::io::{self, BufRead, Write};
-
 #[derive(Debug)]
 pub struct PpmHeader {
     pub magic_number: String,
@@ -18,12 +17,10 @@ pub fn read_ppm_header<R: BufRead>(reader: &mut R) -> io::Result<PpmHeader> {
         .next()
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Missing magic number"))??;
 
-    let (mut width, mut height, mut max_color_value) = (None, None, None);
-
+    let (mut width, mut height, mut max_color_val) = (None, None, None);
     for line in lines {
         let line = line?;
         let trimmed = line.trim();
-
         if trimmed.starts_with('#') {
             continue;
         }
@@ -43,8 +40,8 @@ pub fn read_ppm_header<R: BufRead>(reader: &mut R) -> io::Result<PpmHeader> {
             }
         }
 
-        if max_color_value.is_none() {
-            max_color_value = Some(trimmed.parse().map_err(|_| {
+        if max_color_val.is_none() {
+            max_color_val = Some(trimmed.parse().map_err(|_| {
                 io::Error::new(io::ErrorKind::InvalidData, "Invalid max color value")
             })?);
             break;
@@ -56,30 +53,29 @@ pub fn read_ppm_header<R: BufRead>(reader: &mut R) -> io::Result<PpmHeader> {
         width: width.ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Missing width"))?,
         height: height
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Missing height"))?,
-        _max_color_val: max_color_value
+        _max_color_val: max_color_val
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Missing max color value"))?,
     })
 }
 
 pub fn parse_ppm<R: BufRead>(header: &PpmHeader, reader: &mut R) -> io::Result<Vec<u8>> {
-    let mut result = vec![];
-
+    let size = (header.width * header.height * 3) as usize;
+    let mut result = Vec::with_capacity(size);
     if header.magic_number == ASCII_PPM {
         for line in reader.lines() {
             let line = line?;
-            let trimmed_line = line.trim();
-            if trimmed_line.starts_with('#') {
+            let trimmed = line.trim();
+            if trimmed.starts_with('#') {
                 continue;
             }
-            for val in trimmed_line.split_whitespace() {
-                let px_val = val.parse::<u8>().map_err(|_| {
-                    io::Error::new(io::ErrorKind::InvalidData, "Invalid pixel value")
-                })?;
-                result.push(px_val);
-            }
+
+            result.extend(
+                trimmed
+                    .split_whitespace()
+                    .map(|s| s.parse::<u8>().unwrap_or(0)),
+            );
         }
     } else if header.magic_number == BIN_PPM {
-        let size = (header.width * header.height * 3) as usize;
         result.resize(size, 0);
         reader.read_exact(&mut result)?;
     } else {
@@ -109,9 +105,7 @@ pub fn write_ppm_header<W: Write>(
 pub fn write_ppm_data<W: Write>(writer: &mut W, img: &DynamicImage, bin: bool) -> io::Result<()> {
     let pixels = img.to_rgb8();
     if bin {
-        for px in pixels.pixels() {
-            writer.write_all(&[px[0], px[1], px[2]])?;
-        }
+        writer.write_all(&pixels)?;
     } else {
         for px in pixels.pixels() {
             writeln!(writer, "{} {} {}", px[0], px[1], px[2])?;

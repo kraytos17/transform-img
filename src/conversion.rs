@@ -1,24 +1,19 @@
 use image::codecs::jpeg::JpegEncoder;
-use image::{GenericImageView, Rgb, RgbImage};
+use image::io::Reader;
+use image::{GenericImageView, RgbImage};
 use std::fs::File;
-use std::io::{BufReader, BufWriter};
+use std::io::{BufReader, BufWriter, Write};
 use std::path::Path;
 
-use crate::ppm;
+use crate::ppm::{self, parse_ppm, read_ppm_header, BIN_PPM};
 
 pub fn ppm_to_png<P: AsRef<Path>>(ppm_file: P, png_file: P) -> Result<(), image::ImageError> {
     let file = File::open(ppm_file)?;
     let mut reader = BufReader::new(file);
-    let header = ppm::read_ppm_header(&mut reader)?;
-    let data = ppm::parse_ppm(&header, &mut reader)?;
-
+    let header = read_ppm_header(&mut reader)?;
+    let data = parse_ppm(&header, &mut reader)?;
     let mut rgb_img = RgbImage::new(header.width, header.height);
-    for (i, chunk) in data.chunks(3).enumerate() {
-        let x = (i as u32 % header.width) as u32;
-        let y = (i as u32 / header.width) as u32;
-        rgb_img.put_pixel(x, y, Rgb([chunk[0], chunk[1], chunk[2]]));
-    }
-
+    rgb_img.copy_from_slice(&data);
     rgb_img.save(png_file)?;
 
     Ok(())
@@ -30,10 +25,9 @@ pub fn png_to_ppm<P: AsRef<Path>>(
     bin: bool,
 ) -> Result<(), image::ImageError> {
     let input = image::open(png_file)?;
-    let max_color_val: u32 = 255;
+    let max_color_val = 255;
     let output = File::create(ppm_file)?;
     let mut writer = BufWriter::new(output);
-
     ppm::write_ppm_header(&mut writer, &input, max_color_val, bin)?;
     ppm::write_ppm_data(&mut writer, &input, bin)?;
 
@@ -50,3 +44,25 @@ pub fn ppm_to_jpeg<P: AsRef<Path>>(ppm_file: P, jpeg_file: P) -> Result<(), imag
 
     Ok(())
 }
+
+pub fn jpeg_to_ppm<P: AsRef<Path>>(jpeg_file: P, ppm_file: P) -> Result<(), image::ImageError> {
+    let input = Reader::open(jpeg_file)?.decode()?;
+    let img_buf = input.to_rgb8();
+    let output = File::create(ppm_file)?;
+    let mut writer = BufWriter::new(output);
+
+    writeln!(writer, "{BIN_PPM}")?;
+    writeln!(writer, "{} {}", img_buf.width(), img_buf.height())?;
+    writeln!(writer, "255")?;
+
+    let data = img_buf.as_raw();
+    writer.write_all(data)?;
+
+    Ok(())
+}
+
+// fn png_to_jpeg<P: AsRef<Path>>(png_file: P, jpeg_file: P) -> Result<(), image::ImageError> {
+//     let input = image::open(png_file)?;
+//     let img_buf = input.to_rgb8();
+//     let output = File::create(jpeg_file)?;
+// }
