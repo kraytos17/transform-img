@@ -39,11 +39,11 @@ pub fn handle_conversion(input: &str, output: &str, format: Option<&str>) {
 
     match (input_ext, output_ext) {
         ("ppm", "png") => conversion::ppm_to_png(input, output).unwrap(),
-        ("png", "ppm") => handle_png_to_ppm(input, output, &format),
+        ("png", "ppm") => handle_png_to_ppm(input, output, format),
         ("ppm", "jpg") | ("ppm", "jpeg") => conversion::ppm_to_jpeg(input, output).unwrap(),
         ("jpg", "ppm") | ("jpeg", "ppm") => conversion::jpeg_to_ppm(input, output).unwrap(),
-        // ("png", "jpg") | ("png", "jpeg") => conversion::png_to_jpeg(input, output).unwrap(),
-        // ("jpg", "png") | ("jpeg", "png") => conversion::jpeg_to_png(input, output).unwrap(),
+        ("png", "jpg") | ("png", "jpeg") => conversion::png_to_jpeg(input, output).unwrap(),
+        ("jpg", "png") | ("jpeg", "png") => conversion::jpeg_to_png(input, output).unwrap(),
         _ => {
             eprintln!("Unsupported conversion direction or format.");
             std::process::exit(1);
